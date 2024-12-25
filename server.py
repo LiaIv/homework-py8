@@ -1,12 +1,12 @@
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.error import HTTPError
 import os
 import json
 import urllib.request
 import urllib.parse
-import cgi
 import html
 import logging
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from urllib.error import HTTPError
+import re
 
 # Настройка логирования
 logging.basicConfig(
@@ -92,7 +92,7 @@ def upload_file_to_yandex_disk(token, file_path, yandex_disk_path):
     # Загрузка файла
     try:
         with open(file_path, 'rb') as f:
-            upload_request = urllib.request.Request(upload_url, data=f, method='PUT')
+            upload_request = urllib.request.Request(upload_url, data=f.read(), method='PUT')
             with urllib.request.urlopen(upload_request, timeout=30) as upload_response:
                 if upload_response.status in (201, 202):
                     logging.info(f"Файл {yandex_disk_path} успешно загружен.")
@@ -135,6 +135,70 @@ def check_file_exists_on_yandex_disk(token, yandex_disk_path):
 
 def sanitize_filename(filename):
     return os.path.basename(filename)
+
+def parse_multipart(content_type, rfile, content_length):
+    """
+    Простая функция для парсинга multipart/form-data.
+    Возвращает словарь с полями формы.
+    """
+    boundary = re.findall('boundary=(.*)', content_type)
+    if not boundary:
+        return {}
+    boundary = boundary[0]
+    boundary_bytes = boundary.encode('utf-8')
+    delimiter = b'--' + boundary_bytes
+    terminator = b'--' + boundary_bytes + b'--'
+
+    remaining_bytes = content_length
+    data = rfile.read(content_length)
+    remaining_bytes -= len(data)
+
+    parts = data.split(delimiter)
+    form_data = {}
+
+    for part in parts:
+        if not part or part == b'--' or part == b'--\r\n':
+            continue
+        if part.startswith(b'\r\n'):
+            part = part[2:]
+        if part.endswith(b'\r\n'):
+            part = part[:-2]
+        if part == b'--':
+            break
+
+        # Разделение заголовков и тела
+        try:
+            headers, body = part.split(b'\r\n\r\n', 1)
+        except ValueError:
+            continue
+
+        # Парсинг заголовков
+        header_lines = headers.decode('utf-8').split('\r\n')
+        header_dict = {}
+        for line in header_lines:
+            key, value = line.split(':', 1)
+            header_dict[key.strip().lower()] = value.strip()
+
+        # Обработка Content-Disposition
+        if 'content-disposition' in header_dict:
+            disposition, *params = header_dict['content-disposition'].split(';')
+            disposition = disposition.strip().lower()
+            param_dict = {}
+            for param in params:
+                if '=' in param:
+                    key, val = param.strip().split('=', 1)
+                    param_dict[key.strip()] = val.strip().strip('"')
+            name = param_dict.get('name')
+            filename = param_dict.get('filename')
+            if filename:
+                form_data[name] = {
+                    'filename': filename,
+                    'content': body
+                }
+            else:
+                form_data[name] = body.decode('utf-8')
+
+    return form_data
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
@@ -204,15 +268,17 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "Отсутствует заголовок Content-Type")
             return
 
-        ctype, pdict = cgi.parse_header(content_type)
-        if ctype != 'multipart/form-data':
+        if not content_type.startswith('multipart/form-data'):
             self.send_error(400, "Content-Type должен быть multipart/form-data")
             return
 
-        pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
-        pdict['CONTENT-LENGTH'] = int(self.headers.get('Content-Length', 0))
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length == 0:
+            self.send_error(400, "Пустой запрос")
+            return
+
         try:
-            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST'}, keep_blank_values=True)
+            form = parse_multipart(content_type, self.rfile, content_length)
             logging.info("Данные формы успешно распарсены.")
         except Exception as e:
             logging.error(f"Не удалось распарсить данные формы: {e}")
@@ -224,20 +290,16 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         file_field = form['file']
-        if not file_field.filename:
+        if not file_field.get('filename'):
             self.send_error(400, "Файл не выбран")
             return
 
-        filename = sanitize_filename(file_field.filename)
+        filename = sanitize_filename(file_field['filename'])
         file_path = os.path.join(UPLOAD_DIR, filename)
 
         try:
             with open(file_path, 'wb') as f:
-                while True:
-                    chunk = file_field.file.read(1024)
-                    if not chunk:
-                        break
-                    f.write(chunk)
+                f.write(file_field['content'])
             logging.info(f"Файл {filename} успешно сохранён локально.")
         except Exception as e:
             logging.error(f"Не удалось сохранить файл: {e}")
