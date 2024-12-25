@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Файлы на сервере</title>
+    <style>
+        .uploaded {
+            background-color: rgba(0, 200, 0, 0.25);
+        }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1, h2 {
+            margin: 10px 0;
+            color: #333;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+            width: 100%;
+            max-width: 600px;
+        }
+        li {
+            padding: 10px;
+            margin-bottom: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #fff;
+        }
+        .uploaded {
+            background-color: rgba(0, 200, 0, 0.25);
+        }
+        .upload-form {
+            margin-top: 20px;
+            width: 100%;
+            max-width: 600px;
+        }
+        .upload-form input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        .upload-form input[type="submit"] {
+            padding: 10px 20px;
+            background-color: #007BFF;
+            border: none;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .upload-form input[type="submit"]:hover {
+            background-color: #0056b3;
+        }
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 16px;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+        .message.success {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Список файлов</h1>
+    {{message_block}}
+    <ul>
+        {{file_list}}
+    </ul>
+
+    <h2>Загрузить новый файл</h2>
+    <form enctype="multipart/form-data" method="post" action="/upload" class="upload-form">
+        <input name="file" type="file" required />
+        <input type="submit" value="Загрузить" />
+    </form>
+</body>
+</html>
